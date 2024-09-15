@@ -42,35 +42,13 @@ jobs:
       run: |
         aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
 
-    - name: Check current namespace and list deployments
-      run: |
-        echo "Current namespace:"
-        kubectl config view --minify --output 'jsonpath={..namespace}'
-        echo "\nAll deployments:"
-        kubectl get deployments --all-namespaces
-
-    - name: Create or update deployment
+    - name: Update and apply Kubernetes deployment
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        if ! kubectl get deployment openai-app; then
-          echo "Deployment not found. Creating it..."
-          kubectl create deployment openai-app --image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          kubectl set env deployment/openai-app OPENAI_API_KEY=$(kubectl get secret openai-secret -o jsonpath='{.data.OPENAI_API_KEY}' | base64 --decode)
-          echo "Waiting for deployment to be ready..."
-          kubectl rollout status deployment/openai-app --timeout=60s
-        else
-          echo "Deployment already exists."
-        fi
-
-    - name: Update Kubernetes deployment
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        IMAGE_TAG: ${{ github.sha }}
-      run: |
-        CONTAINER_NAME=$(kubectl get deployment openai-app -o jsonpath='{.spec.template.spec.containers[0].name}')
-        kubectl set image deployment/openai-app ${CONTAINER_NAME}=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        sed -i 's|${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}|'"$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"'|' k8s/deployments/openai-app-deployment.yaml
+        kubectl apply -f k8s/deployments/openai-app-deployment.yaml
 
     - name: Apply Kubernetes service
       run: |
@@ -78,13 +56,19 @@ jobs:
 
     - name: Update OpenAI API Key in Kubernetes Secret
       run: |
-        kubectl create secret generic openai-secret --from-literal=OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }} --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create secret generic openai-secret --from-literal=api-key=${{ secrets.OPENAI_API_KEY }} --dry-run=client -o yaml | kubectl apply -f -
 
     - name: Wait for deployment rollout
       run: |
         kubectl rollout status deployment/openai-app --timeout=300s
 
-    - name: Debug deployment
+    - name: Get Service URL
+      if: success()
+      run: |
+        echo "Service URL:"
+        kubectl get service openai-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+
+    - name: Debug info
       if: failure()
       run: |
         echo "Deployment status:"
@@ -95,9 +79,3 @@ jobs:
         kubectl logs -l app=openai-app --all-containers --tail=100
         echo "Recent events:"
         kubectl get events --sort-by=.metadata.creationTimestamp
-
-    - name: Get Service URL
-      if: success()
-      run: |
-        echo "Service URL:"
-        kubectl get service openai-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
