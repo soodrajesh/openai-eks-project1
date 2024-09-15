@@ -2,9 +2,12 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-COPY src/requirements.txt .
+# Copy requirements.txt from the correct location
+COPY app/src/requirements.txt .
+
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY src .
+# Copy the entire src directory
+COPY app/src .
 
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
