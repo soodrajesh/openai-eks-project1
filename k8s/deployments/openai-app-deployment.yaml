@@ -1,7 +1,10 @@
+#        image: ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: openai-app
+  labels:
+    app: openai-app
 spec:
   replicas: 1
   selector:
@@ -17,33 +20,11 @@ spec:
         image: ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
         ports:
         - containerPort: 5000
-        env:
-        - name: OPENAI_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: openai-secret
-              key: api-key
-
         readinessProbe:
           httpGet:
-            path: /healthz
+            path: /healthz  # Adjust this path if necessary
             port: 5000
           initialDelaySeconds: 5
           periodSeconds: 10
 
-        livenessProbe:
-          httpGet:
-            path: /healthz
-            port: 5000
-          initialDelaySeconds: 15
-          periodSeconds: 20
 
-
-        # Resource limits and requests
-        resources:
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
-          requests:
-            memory: "256Mi"
-            cpu: "250m"
