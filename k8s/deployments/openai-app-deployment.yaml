@@ -21,5 +21,12 @@ spec:
         - name: OPENAI_API_KEY
           valueFrom:
             secretKeyRef:
-              name: openai-secrets
+              name: openai-secret
               key: api-key
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "256Mi"
