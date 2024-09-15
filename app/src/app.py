@@ -19,7 +19,6 @@ def generate_text():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Add a health check route
 @app.route("/healthz", methods=["GET"])
 def health_check():
     return jsonify({"status": "ok"}), 200
