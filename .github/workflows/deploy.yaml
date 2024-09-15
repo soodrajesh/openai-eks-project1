@@ -7,9 +7,9 @@ on:
     branches: [ main ]
 
 env:
-  AWS_REGION: us-west-2 # Change this to your AWS region
-  ECR_REPOSITORY: my-sample-app # Change this to your ECR repository name
-  EKS_CLUSTER_NAME: demo-eks-cluster # Change this to your EKS cluster name
+  AWS_REGION: us-west-2
+  ECR_REPOSITORY: my-sample-app
+  EKS_CLUSTER_NAME: demo-eks-cluster
 
 jobs:
   build-and-deploy:
@@ -35,23 +35,51 @@ jobs:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        cd $GITHUB_WORKSPACE  # Ensure we're in the root of the repository
+        echo "Building Docker image..."
         docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        echo "Pushing image to ECR..."
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        echo "Image pushed successfully. Image URL: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+    - name: Verify image in ECR
+      run: |
+        aws ecr describe-images --repository-name $ECR_REPOSITORY --image-ids imageTag=${{ github.sha }} || (echo "Failed to find image in ECR" && exit 1)
 
     - name: Update kubeconfig
       run: |
         aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+        kubectl config view --raw
 
-    - name: Deploy to EKS
+    - name: Update and apply Kubernetes manifests
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
+        echo "Updating deployment YAML..."
         sed -i 's|CONTAINER_IMAGE|'${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}'|' k8s/deployments/openai-app-deployment.yaml
+        echo "Updated image in deployment YAML:"
+        grep "image:" k8s/deployments/openai-app-deployment.yaml
+        echo "Applying deployment..."
         kubectl apply -f k8s/deployments/openai-app-deployment.yaml
+        echo "Applying service..."
         kubectl apply -f k8s/services/openai-app-service.yaml
+
+    - name: Verify deployment
+      run: |
+        kubectl rollout status deployment/openai-app
+        kubectl get pods -l app=openai-app
 
     - name: Update OpenAI API Key in Kubernetes Secret
       run: |
         kubectl create secret generic openai-secret --from-literal=OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }} --dry-run=client -o yaml | kubectl apply -f -
+        echo "Secret created/updated successfully"
+
+    - name: Debug information
+      if: failure()
+      run: |
+        echo "Deployment YAML content:"
+        cat k8s/deployments/openai-app-deployment.yaml
+        echo "Pod details:"
+        kubectl describe pods -l app=openai-app
+        echo "Recent events:"
+        kubectl get events --sort-by=.metadata.creationTimestamp
