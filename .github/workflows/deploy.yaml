@@ -10,7 +10,7 @@ env:
   AWS_REGION: us-west-2 # Change this to your AWS region
   ECR_REPOSITORY: my-sample-app # Change this to your ECR repository name
   EKS_CLUSTER_NAME: demo-eks-cluster # Change this to your EKS cluster name
-  
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -41,14 +41,16 @@ jobs:
 
     - name: Update kubeconfig
       run: |
-        aws eks get-token --cluster-name ${{ env.EKS_CLUSTER_NAME }} | kubectl apply -f -
         aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
 
     - name: Deploy to EKS
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
       run: |
         sed -i 's|CONTAINER_IMAGE|'${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}'|' k8s/deployment.yaml
         kubectl apply -f k8s/deployment.yaml
-        kubectl apply -f k8s/service.yaml   
+        kubectl apply -f k8s/service.yaml
 
     - name: Update OpenAI API Key in Kubernetes Secret
       run: |
