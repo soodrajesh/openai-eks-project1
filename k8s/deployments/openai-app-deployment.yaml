@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openai-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: openai-app
+  template:
+    metadata:
+      labels:
+        app: openai-app
+    spec:
+      containers:
+      - name: openai-app
+        image: ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
+        ports:
+        - containerPort: 5000
+        env:
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: openai-secrets
+              key: api-key

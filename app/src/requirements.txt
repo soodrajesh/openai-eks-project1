@@ -1,0 +1,6 @@
+flask
+openai
+gunicorn
+# Flask==2.0.1
+# openai==0.27.0
+# gunicorn==20.1.0
