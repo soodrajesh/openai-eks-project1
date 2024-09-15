@@ -56,7 +56,7 @@ jobs:
         IMAGE_TAG: ${{ github.sha }}
       run: |
         echo "Updating deployment YAML..."
-        sed -i 's|CONTAINER_IMAGE|'${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}'|' k8s/deployments/openai-app-deployment.yaml
+        sed -i 's|CONTAINER_IMAGE|'"${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"'|' k8s/deployments/openai-app-deployment.yaml
         echo "Updated image in deployment YAML:"
         grep "image:" k8s/deployments/openai-app-deployment.yaml
         echo "Applying deployment..."
@@ -64,22 +64,45 @@ jobs:
         echo "Applying service..."
         kubectl apply -f k8s/services/openai-app-service.yaml
 
-    - name: Verify deployment
-      run: |
-        kubectl rollout status deployment/openai-app
-        kubectl get pods -l app=openai-app
-
     - name: Update OpenAI API Key in Kubernetes Secret
       run: |
         kubectl create secret generic openai-secret --from-literal=OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }} --dry-run=client -o yaml | kubectl apply -f -
         echo "Secret created/updated successfully"
 
-    - name: Debug information
+    - name: Wait for deployment
+      run: |
+        kubectl rollout status deployment/openai-app --timeout=300s
+
+    - name: Verify deployment
+      run: |
+        echo "Deployment status:"
+        kubectl get deployment openai-app
+        echo "Pod status:"
+        kubectl get pods -l app=openai-app
+        echo "Service status:"
+        kubectl get service openai-app-service
+
+    - name: Debug deployment
       if: failure()
       run: |
-        echo "Deployment YAML content:"
-        cat k8s/deployments/openai-app-deployment.yaml
+        echo "Deployment details:"
+        kubectl describe deployment openai-app
         echo "Pod details:"
         kubectl describe pods -l app=openai-app
+        echo "Pod logs:"
+        kubectl logs -l app=openai-app --all-containers --tail=100
         echo "Recent events:"
-        kubectl get events --sort-by=.metadata.creationTimestamp
+        kubectl get events --sort-by=.metadata.creationTimestamp --field-selector type=Warning
+
+    - name: Get LoadBalancer URL
+      if: success()
+      run: |
+        echo "LoadBalancer URL:"
+        kubectl get service openai-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+
+    - name: Cleanup
+      if: always()
+      run: |
+        kubectl delete secret openai-secret --ignore-not-found
+        kubectl delete deployment openai-app --ignore-not-found
+        kubectl delete service openai-app-service --ignore-not-found
