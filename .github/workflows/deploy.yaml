@@ -35,74 +35,46 @@ jobs:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        echo "Building Docker image..."
         docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-        echo "Pushing image to ECR..."
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-        echo "Image pushed successfully. Image URL: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-
-    - name: Verify image in ECR
-      run: |
-        aws ecr describe-images --repository-name $ECR_REPOSITORY --image-ids imageTag=${{ github.sha }} || (echo "Failed to find image in ECR" && exit 1)
 
     - name: Update kubeconfig
       run: |
         aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
-        kubectl config view --raw
 
-    - name: Update and apply Kubernetes manifests
+    - name: Update Kubernetes deployment
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        echo "Updating deployment YAML..."
-        sed -i 's|CONTAINER_IMAGE|'"${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"'|' k8s/deployments/openai-app-deployment.yaml
-        echo "Updated image in deployment YAML:"
-        grep "image:" k8s/deployments/openai-app-deployment.yaml
-        echo "Applying deployment..."
-        kubectl apply -f k8s/deployments/openai-app-deployment.yaml
-        echo "Applying service..."
+        kubectl set image deployment/openai-app openai-app=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+    - name: Apply Kubernetes service
+      run: |
         kubectl apply -f k8s/services/openai-app-service.yaml
 
     - name: Update OpenAI API Key in Kubernetes Secret
       run: |
         kubectl create secret generic openai-secret --from-literal=OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }} --dry-run=client -o yaml | kubectl apply -f -
-        echo "Secret created/updated successfully"
 
-    - name: Wait for deployment
+    - name: Wait for deployment rollout
       run: |
         kubectl rollout status deployment/openai-app --timeout=300s
 
-    - name: Verify deployment
+    - name: Debug deployment
+      if: failure()
       run: |
         echo "Deployment status:"
         kubectl get deployment openai-app
         echo "Pod status:"
         kubectl get pods -l app=openai-app
-        echo "Service status:"
-        kubectl get service openai-app-service
-
-    - name: Debug deployment
-      if: failure()
-      run: |
-        echo "Deployment details:"
-        kubectl describe deployment openai-app
-        echo "Pod details:"
-        kubectl describe pods -l app=openai-app
         echo "Pod logs:"
         kubectl logs -l app=openai-app --all-containers --tail=100
         echo "Recent events:"
-        kubectl get events --sort-by=.metadata.creationTimestamp --field-selector type=Warning
+        kubectl get events --sort-by=.metadata.creationTimestamp
 
-    - name: Get LoadBalancer URL
+    - name: Get Service URL
       if: success()
       run: |
-        echo "LoadBalancer URL:"
+        echo "Service URL:"
         kubectl get service openai-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-
-    - name: Cleanup
-      if: always()
-      run: |
-        kubectl delete secret openai-secret --ignore-not-found
-        kubectl delete deployment openai-app --ignore-not-found
-        kubectl delete service openai-app-service --ignore-not-found
