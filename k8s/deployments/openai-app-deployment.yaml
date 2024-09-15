@@ -2,10 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: openai-app
-  labels:
-    app: openai-app
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: openai-app
@@ -25,10 +23,3 @@ spec:
             secretKeyRef:
               name: openai-secret
               key: api-key
-        resources:
-          requests:
-            cpu: 100m
-            memory: 128Mi
-          limits:
-            cpu: 500m
-            memory: 256Mi

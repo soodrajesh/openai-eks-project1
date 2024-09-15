@@ -3,8 +3,6 @@ name: Build and Deploy OpenAI App
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
 
 env:
   AWS_REGION: us-west-2
@@ -42,37 +40,24 @@ jobs:
       run: |
         aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
 
-    - name: Update and apply Kubernetes deployment
+    - name: Deploy to EKS
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
         sed -i 's|${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}|'"$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"'|' k8s/deployments/openai-app-deployment.yaml
         kubectl apply -f k8s/deployments/openai-app-deployment.yaml
-
-    - name: Apply Kubernetes service
-      run: |
         kubectl apply -f k8s/services/openai-app-service.yaml
 
-    - name: Update OpenAI API Key in Kubernetes Secret
+    - name: Update OpenAI API Key
       run: |
         kubectl create secret generic openai-secret --from-literal=api-key=${{ secrets.OPENAI_API_KEY }} --dry-run=client -o yaml | kubectl apply -f -
 
-    - name: Wait for deployment rollout
+    - name: Wait for deployment
       run: |
         kubectl rollout status deployment/openai-app --timeout=300s
 
-    - name: Verify deployment and pods
-      run: |
-        echo "Deployment status:"
-        kubectl get deployment openai-app
-        echo "Pod status:"
-        kubectl get pods -l app=openai-app
-        echo "Pod logs:"
-        kubectl logs -l app=openai-app --tail=100
-
     - name: Get Service URL
-      if: success()
       run: |
         echo "Service URL:"
         kubectl get service openai-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
@@ -80,11 +65,7 @@ jobs:
     - name: Debug info
       if: failure()
       run: |
-        echo "Deployment status:"
-        kubectl get deployment openai-app
-        echo "Pod status:"
-        kubectl get pods -l app=openai-app
-        echo "Pod logs:"
+        kubectl get pods
+        kubectl describe deployment openai-app
         kubectl logs -l app=openai-app --all-containers --tail=100
-        echo "Recent events:"
         kubectl get events --sort-by=.metadata.creationTimestamp
