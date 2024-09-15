@@ -42,6 +42,25 @@ jobs:
       run: |
         aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
 
+    - name: Check current namespace and list deployments
+      run: |
+        echo "Current namespace:"
+        kubectl config view --minify --output 'jsonpath={..namespace}'
+        echo "\nAll deployments:"
+        kubectl get deployments --all-namespaces
+
+    - name: Create deployment if it doesn't exist
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        if ! kubectl get deployment openai-app; then
+          echo "Deployment not found. Creating it..."
+          kubectl create deployment openai-app --image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        else
+          echo "Deployment already exists."
+        fi
+
     - name: Update Kubernetes deployment
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
