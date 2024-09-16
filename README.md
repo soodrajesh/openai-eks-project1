@@ -78,6 +78,10 @@ curl -X POST http://your-loadbalancer-url/generate \
 -H "Content-Type: application/json" \
 -d '{"prompt": "What are the benefits of cloud computing?"}'
 
+```
+{"generated_text":"Cloud computing offers a wide range of benefits for individuals and organizations. Here are some of the key advantages:\n\n1. **Cost Efficiency**: \n   - **Reduced Capital Expenses**: Cloud computing eliminates the need for businesses to invest heavily in physical hardware and infrastructure. Instead, they can use a pay-as-you-go model.\n   - **Lower Operational Costs**: Maintenance and management of hardware and software are handled by the cloud service provider, reducing operational costs.\n\n2. **Scalability**:"}
+```
+
 
 CI/CD
 This project uses GitHub Actions for continuous integration and deployment. The workflow is defined in .github/workflows/deploy.yml. It automatically builds and pushes the Docker image, and updates the Kubernetes deployment on push to the main branch.
